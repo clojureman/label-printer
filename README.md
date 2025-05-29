@@ -1,5 +1,12 @@
 # labelprinter.py
 
+> **An experiment in vibe coding**
+>
+> *Note from a human:* All code and text in this repo is a result of vibe coding with the Gemini AI, 2025-05-29.
+> It took an hour or two, so I'd say that from a developer productivity point of view not worth it.
+> The initial version (made in around 5 seconds) was quite good, and making it work manually would probably have taken 10 minutes,
+> but making Gemini understand the problems took a lot of time.
+
 **Description:**
 
 This Python script, named `labelprinter.py`, continuously monitors a specified folder for new PNG files. Upon detecting a new PNG file, it attempts to print it using the `brother_ql` command-line tool in a separate process. This design ensures the main program remains stable even if `brother_ql` encounters errors.
