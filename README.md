@@ -7,7 +7,6 @@
 > The initial version (made in around 5 seconds) was quite good, and making it work manually would probably have taken 10 minutes,
 > but making Gemini understand the problems took a lot of time.
 
-
 **Description:**
 
 This Python script, named `labelprinter.py`, continuously monitors a specified folder for new PNG files. Upon detecting a new PNG file, it adds the file to a queue. A separate worker thread processes the queue, printing each file using the `brother_ql` command-line tool. This design ensures that labels are printed one at a time, preventing multiple instances of `brother_ql` from running concurrently. This design also ensures the main file monitoring thread remains responsive, even if printing takes some time.
