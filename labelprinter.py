@@ -8,6 +8,7 @@ import threading
 import argparse
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import queue
 
 def check_venv():
     """Checks if a virtual environment named 'venv' in the same directory is active."""
@@ -55,7 +56,7 @@ def print_label(filepath, brother_ql_global_args, brother_ql_print_args, error_s
         os.rename(filepath, filepath + error_suffix)
 
 class NewFileHandler(FileSystemEventHandler):
-    def __init__(self, watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds):
+    def __init__(self, watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds, print_queue):
         self.watch_folder = watch_folder
         self.brother_ql_global_args = brother_ql_global_args
         self.brother_ql_print_args = brother_ql_print_args
@@ -63,6 +64,7 @@ class NewFileHandler(FileSystemEventHandler):
         self.done_suffix = done_suffix
         self.timeout_seconds = timeout_seconds
         self.processed_files = set()
+        self.print_queue = print_queue
 
     def on_created(self, event):
         if not event.is_directory and event.src_path.lower().endswith(".png"):
@@ -70,12 +72,17 @@ class NewFileHandler(FileSystemEventHandler):
             if filepath not in self.processed_files:
                 print(f"New PNG file detected: {filepath}")
                 self.processed_files.add(filepath)
-                thread = threading.Thread(
-                    target=print_label,
-                    args=(filepath, self.brother_ql_global_args, self.brother_ql_print_args, self.error_suffix, self.done_suffix, self.timeout_seconds),
-                )
-                thread.daemon = True  # Allow the main program to exit even if the thread is running
-                thread.start()
+                self.print_queue.put((filepath, self.brother_ql_global_args, self.brother_ql_print_args, self.error_suffix, self.done_suffix, self.timeout_seconds))
+
+def worker_thread(print_queue):
+    """Worker thread to process print jobs one at a time."""
+    while True:
+        job = print_queue.get()
+        if job is None:  # Sentinel value to signal thread termination
+            break
+        filepath, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds = job
+        print_label(filepath, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds)
+        print_queue.task_done()
 
 def main():
     check_venv()
@@ -111,10 +118,15 @@ def main():
         print(f"Error: Watch folder '{watch_folder}' does not exist or is not a directory.")
         sys.exit(1)
 
-    event_handler = NewFileHandler(watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds)
+    print_queue = queue.Queue()
+    event_handler = NewFileHandler(watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds, print_queue)
     observer = Observer()
     observer.schedule(event_handler, watch_folder, recursive=False)
     observer.start()
+
+    worker = threading.Thread(target=worker_thread, args=(print_queue,))
+    worker.daemon = True
+    worker.start()
 
     try:
         print(f"Watching folder '{watch_folder}' for new PNG files...")
@@ -123,6 +135,8 @@ def main():
     except KeyboardInterrupt:
         print("Stopping the watcher.")
     finally:
+        print_queue.put(None)  # Signal worker thread to exit
+        worker.join()
         observer.stop()
         observer.join()
 

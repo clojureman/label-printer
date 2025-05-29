@@ -1,8 +1,16 @@
 # labelprinter.py
 
+> **An experiment in vibe coding**
+>
+> *Note from a human:* All code and text in this repo is a result of vibe coding with the Gemini AI, 2025-05-29.
+> It took an hour or two, so I'd say that from a developer productivity point of view not worth it.
+> The initial version (made in around 5 seconds) was quite good, and making it work manually would probably have taken 10 minutes,
+> but making Gemini understand the problems took a lot of time.
+
+
 **Description:**
 
-This Python script, named `labelprinter.py`, continuously monitors a specified folder for new PNG files. Upon detecting a new PNG file, it attempts to print it using the `brother_ql` command-line tool in a separate process. This design ensures the main program remains stable even if `brother_ql` encounters errors.
+This Python script, named `labelprinter.py`, continuously monitors a specified folder for new PNG files. Upon detecting a new PNG file, it adds the file to a queue. A separate worker thread processes the queue, printing each file using the `brother_ql` command-line tool. This design ensures that labels are printed one at a time, preventing multiple instances of `brother_ql` from running concurrently. This design also ensures the main file monitoring thread remains responsive, even if printing takes some time.
 
 The script handles printing success and failure:
 
@@ -21,16 +29,19 @@ The script takes the folder to watch and any necessary parameters for `brother_q
 
 1.  **Save the script:** Save the Python code as `labelprinter.py`.
 2.  **Make the script executable:**
+
     ```bash
     chmod +x labelprinter.py
     ```
 3.  **Create and activate the virtual environment:** This script is designed to run within a virtual environment named `venv` located in the same directory as the script.
+
     ```bash
     python3 -m venv venv
     source venv/bin/activate  # On Linux/macOS
     # Or for Windows: .\venv\Scripts\activate
     ```
 4.  **Install dependencies:** Ensure you have `watchdog` and `brother_ql` installed *within your activated virtual environment*:
+
     ```bash
     pip install watchdog brother_ql
     ```
@@ -59,7 +70,7 @@ The script takes the folder to watch and any necessary parameters for `brother_q
 * This script relies on the `brother_ql` command-line tool being installed and accessible within your activated virtual environment.
 * Ensure that your Brother label printer is properly configured and connected to your system.
 * The script will only process files that are added to the watched folder *after* the script has started running. Existing PNG files in the folder at the time of startup will not be processed.
-* The script uses a separate thread for each print job to avoid blocking the main file monitoring process.
+* The script now uses a queue and a separate worker thread to ensure that only one instance of `brother_ql` runs at a time.
 * The total command passed to `brother_ql` will be printed to the console before attempting to print each file.
 * Error messages and status updates will be printed to the console.
 * Use `Ctrl+C` in your terminal to stop the script.
