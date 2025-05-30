@@ -6,10 +6,19 @@
 > It took an hour or two, so I'd say that from a developer productivity point of view not worth it.
 > The initial version (made in around 5 seconds) was quite good, and making it work manually would probably have taken 10 minutes,
 > but making Gemini understand the problems took a lot of time.
+> 
+> Next day some further vibe coding to add grouping (without cuts)
+> 
+> The AI had huge problems understanding the cut / no cut behaviour of 
+> brother_ql, and also surprisingly with understanding how to code sequential 
+> processing and grouping.
+
+
+# labelprinter.py
 
 **Description:**
 
-This Python script, named `labelprinter.py`, continuously monitors a specified folder for new PNG files. Upon detecting a new PNG file, it adds the file to a queue. A separate worker thread processes the queue, printing each file using the `brother_ql` command-line tool. This design ensures that labels are printed one at a time, preventing multiple instances of `brother_ql` from running concurrently. This design also ensures the main file monitoring thread remains responsive, even if printing takes some time.
+This Python script, named `labelprinter.py`, continuously monitors a specified folder for new PNG files. Upon detecting a new PNG file, it adds the file to a queue. A separate worker thread processes the queue, printing each file using the `brother_ql` command-line tool, ensuring labels are printed one at a time. **A grouping option is included: if filenames contain a configurable separator (default "__"), the part of the filename before the first separator is treated as a group. The script includes a short grace period (default 0.25 seconds) to allow for more files belonging to the same group to appear before printing starts for that group. Labels within the same group are printed in the order of their modification time, and the `--no-cut` option is used to prevent cuts between them. A cut will be forced after all files in a group have been printed or when the group changes or the grace period expires.**
 
 The script handles printing success and failure:
 
@@ -44,16 +53,34 @@ The script takes the folder to watch and any necessary parameters for `brother_q
     ```bash
     pip install watchdog brother_ql
     ```
-5.  **Run from the command line:** With your virtual environment activated, navigate to the directory of the script and execute it, providing the folder to watch as the first argument, followed by the global `brother_ql` options, the word `print`, and then the `brother_ql print` subcommand options.
+5.  **Run from the command line:** With your virtual environment activated, navigate to the directory of the script and execute it, providing the folder to watch as the first argument, followed by the global `brother_ql` options, the word `print`, and then the `brother_ql print` subcommand options. You can also configure the group separator and grace period.
 
     ```bash
-    ./labelprinter.py ~/spool/cup/ --printer /dev/usb/lp0 -m QL-700 -b linux_kernel print --label 39x48 --600dpi
+    ./labelprinter.py ~/spool/cup --printer 10.10.1.18 -m QL-810W -b network print --label 39x48 --600dpi
     ```
 
-    * Replace `~/spool/cup/` with the actual path to the directory you want the script to monitor.
-    * `--printer /dev/usb/lp0`, `-m QL-700`, `-b linux_kernel`: Example global options for `brother_ql` (e.g., specifying the printer, model, and backend).
-    * `print`: The subcommand for printing.
-    * `--label 39x48`, `--600dpi`: Example options for the `brother_ql print` subcommand (e.g., specifying the label size and resolution). Refer to the `brother_ql` documentation for available options.
+    To use a different group separator (e.g., "---") and the default 250ms grace period:
+
+    ```bash
+    ./labelprinter.py ~/spool/cup --printer 10.10.1.18 -m QL-810W -b network --group_separator "---" print --label 39x48 --600dpi
+    ```
+
+    To specify a different grace period (e.g., 1 second):
+
+    ```bash
+    ./labelprinter.py ~/spool/cup --printer 10.10.1.18 -m QL-810W -b network --grace_period 1.0 print --label 39x48 --600dpi
+    ```
+
+    You can combine these options as well:
+
+    ```bash
+    ./labelprinter.py ~/spool/cup --printer 10.10.1.18 -m QL-810W -b network --group_separator "---" --grace_period 0.5 print --label 39x48 --600dpi
+    ```
+
+    * Replace `~/spool/cup` and `10.10.1.18` with your actual folder path and printer address.
+    * Other `brother_ql` arguments should be adjusted based on your printer and label requirements.
+    * `--group_separator "__"` (or your chosen separator): Specifies the separator used in filenames to identify groups for continuous printing without cuts. Defaults to `"__"`.
+    * `--grace_period 0.25` (or your desired time in seconds): Specifies the time to wait for additional files belonging to the same group before printing starts. Defaults to `0.25` seconds.
 
 **Command-Line Arguments:**
 
@@ -61,7 +88,13 @@ The script takes the folder to watch and any necessary parameters for `brother_q
 * `--timeout`: (Optional) The number of seconds to wait for the `brother_ql` print command to complete. Defaults to `30` seconds.
 * `--error_suffix`: (Optional) The suffix to append to the filename of PNG files that failed to print or timed out. Defaults to `.error`.
 * `--done_suffix`: (Optional) The suffix to append to the filename of PNG files that were successfully printed. Defaults to `.done`.
+* `--group_separator`: (Optional) The separator string used in filenames to identify groups for continuous printing without cuts. Defaults to `"__"`.
+* `--grace_period`: (Optional) The grace period in seconds to wait for new files in the same group. Defaults to `0.25`.
 * `brother_ql_args`: (Remaining arguments) Arguments to pass to `brother_ql`. Separate global options from `print` subcommand options by including the word `print` in the arguments.
+
+**Filename Grouping:**
+
+If your filenames follow a pattern like `groupname__uniqueid.png`, where `"__"` is the default `group_separator`, all files with the same `groupname` arriving within the `grace_period` will be printed without an automatic cut in between. A cut will be forced after the grace period expires for a group or when a file with a different `groupname` appears.
 
 **Important Notes:**
 

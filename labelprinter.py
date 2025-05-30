@@ -9,6 +9,7 @@ import argparse
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import queue
+import re
 
 def check_venv():
     """Checks if a virtual environment named 'venv' in the same directory is active."""
@@ -26,9 +27,12 @@ def check_venv():
     else:
         print(f"Virtual environment '{venv_path}' is active.")
 
-def print_label(filepath, brother_ql_global_args, brother_ql_print_args, error_suffix=".error", done_suffix=".done", timeout_seconds=30):
+def print_label(filepath, brother_ql_global_args, brother_ql_print_args, no_cut, error_suffix=".error", done_suffix=".done", timeout_seconds=30):
     """Prints a label using brother_ql in a separate process with a timeout."""
-    full_command = ["brother_ql", *brother_ql_global_args, "print", *brother_ql_print_args, filepath]
+    command_parts = ["brother_ql", *brother_ql_global_args, "print", *brother_ql_print_args, filepath]
+    if no_cut:
+        command_parts.append("--no-cut")
+    full_command = command_parts
     print(f"Attempting to run brother_ql with command: {' '.join(full_command)}")
     try:
         process = subprocess.Popen(
@@ -56,23 +60,70 @@ def print_label(filepath, brother_ql_global_args, brother_ql_print_args, error_s
         os.rename(filepath, filepath + error_suffix)
 
 class NewFileHandler(FileSystemEventHandler):
-    def __init__(self, watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds, print_queue):
+
+    def __init__(self, watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds, print_queue, group_separator, grace_period):
         self.watch_folder = watch_folder
         self.brother_ql_global_args = brother_ql_global_args
         self.brother_ql_print_args = brother_ql_print_args
         self.error_suffix = error_suffix
         self.done_suffix = done_suffix
         self.timeout_seconds = timeout_seconds
-        self.processed_files = set()
         self.print_queue = print_queue
+        self.group_separator = group_separator
+        self.grace_period = grace_period
+        self.current_group = None
+        self.pending_group_files = []
+        self._processing_timer = None
+        self.processed_files = set()
 
     def on_created(self, event):
         if not event.is_directory and event.src_path.lower().endswith(".png"):
             filepath = event.src_path
             if filepath not in self.processed_files:
-                print(f"New PNG file detected: {filepath}")
                 self.processed_files.add(filepath)
-                self.print_queue.put((filepath, self.brother_ql_global_args, self.brother_ql_print_args, self.error_suffix, self.done_suffix, self.timeout_seconds))
+                self._enqueue_file(filepath)
+
+    def _enqueue_file(self, filepath):
+        group_match = re.match(f"^(.*){re.escape(self.group_separator)}", os.path.basename(filepath))
+        current_file_group = group_match.group(1) if group_match else None
+
+        if current_file_group == self.current_group and self._processing_timer:
+            self.pending_group_files.append(filepath)
+            self._reset_timer()
+        elif current_file_group == self.current_group and not self._processing_timer:
+            self.pending_group_files.append(filepath)
+            self._start_timer()
+        else:
+            self._process_pending_group()
+            self.current_group = current_file_group
+            self.pending_group_files.append(filepath)
+            self._start_timer()
+
+    def _start_timer(self):
+        if self._processing_timer is None:
+            self._processing_timer = threading.Timer(self.grace_period, self._process_pending_group)
+            self._processing_timer.start()
+
+    def _reset_timer(self):
+        if self._processing_timer:
+            self._processing_timer.cancel()
+            self._processing_timer = threading.Timer(self.grace_period, self._process_pending_group)
+            self._processing_timer.start()
+
+    def _process_pending_group(self):
+        if self._processing_timer:
+            self._processing_timer.cancel()
+            self._processing_timer = None
+
+        if self.pending_group_files:
+            self.pending_group_files.sort(key=os.path.getmtime)
+            num_files = len(self.pending_group_files)
+            for i, filepath in enumerate(self.pending_group_files):
+                no_cut = i < num_files - 1  # Use --no-cut if there are more files in the group
+                self.print_queue.put((filepath, self.brother_ql_global_args, self.brother_ql_print_args, no_cut, self.error_suffix, self.done_suffix, self.timeout_seconds))
+
+            self.pending_group_files = []
+            self.current_group = None
 
 def worker_thread(print_queue):
     """Worker thread to process print jobs one at a time."""
@@ -80,18 +131,21 @@ def worker_thread(print_queue):
         job = print_queue.get()
         if job is None:  # Sentinel value to signal thread termination
             break
-        filepath, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds = job
-        print_label(filepath, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds)
+        filepath, brother_ql_global_args, brother_ql_print_args, no_cut, error_suffix, done_suffix, timeout_seconds = job
+        if filepath:
+            print_label(filepath, brother_ql_global_args, brother_ql_print_args, no_cut, error_suffix, done_suffix, timeout_seconds)
         print_queue.task_done()
 
 def main():
     check_venv()
-    parser = argparse.ArgumentParser(description="Watch a folder for new PNG files and print them using brother_ql.")
+    parser = argparse.ArgumentParser(description="Watch a folder for new PNG files and print them using brother_ql with grouping and grace period.")
     parser.add_argument("watch_folder", help="The folder to watch for new PNG files.")
     parser.add_argument("--timeout", type=int, default=30, help="Timeout in seconds for the brother_ql print command.")
     parser.add_argument("--error_suffix", type=str, default=".error", help="Suffix to add to skipped files.")
     parser.add_argument("--done_suffix", type=str, default=".done", help="Suffix to add to successfully printed files.")
-    parser.add_argument("brother_ql_args", nargs=argparse.REMAINDER, help="Arguments to pass to brother_ql, separate global options from 'print' subcommand options with '--'.")
+    parser.add_argument("--group_separator", type=str, default="__", help="Separator in filename to define groups for no-cut (e.g., '__').")
+    parser.add_argument("--grace_period", type=float, default=0.25, help="Grace period in seconds (default 0.25s) to wait for new files in the same group.")
+    parser.add_argument("brother_ql_args", nargs=argparse.REMAINDER, help="Arguments to pass to brother_ql, separate global options from 'print' subcommand options with 'print'.")
 
     args = parser.parse_args()
 
@@ -99,6 +153,8 @@ def main():
     timeout_seconds = args.timeout
     error_suffix = args.error_suffix
     done_suffix = args.done_suffix
+    group_separator = args.group_separator
+    grace_period = args.grace_period
 
     brother_ql_global_args = []
     brother_ql_print_args = []
@@ -119,7 +175,7 @@ def main():
         sys.exit(1)
 
     print_queue = queue.Queue()
-    event_handler = NewFileHandler(watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds, print_queue)
+    event_handler = NewFileHandler(watch_folder, brother_ql_global_args, brother_ql_print_args, error_suffix, done_suffix, timeout_seconds, print_queue, group_separator, grace_period)
     observer = Observer()
     observer.schedule(event_handler, watch_folder, recursive=False)
     observer.start()
