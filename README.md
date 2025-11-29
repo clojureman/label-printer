@@ -90,6 +90,7 @@ The script takes the folder to watch and any necessary parameters for `brother_q
 * `--done_suffix`: (Optional) The suffix to append to the filename of PNG files that were successfully printed. Defaults to `.done`.
 * `--group_separator`: (Optional) The separator string used in filenames to identify groups for continuous printing without cuts. Defaults to `"__"`.
 * `--grace_period`: (Optional) The grace period in seconds to wait for new files in the same group. Defaults to `0.25`.
+* `--skip_venv_check`: (Optional) If present, skips the check for a `venv` virtual environment.
 * `brother_ql_args`: (Remaining arguments) Arguments to pass to `brother_ql`. Separate global options from `print` subcommand options by including the word `print` in the arguments.
 
 **Filename Grouping:**
@@ -98,7 +99,7 @@ If your filenames follow a pattern like `groupname__uniqueid.png`, where `"__"` 
 
 **Important Notes:**
 
-* **Virtual Environment:** This script requires a virtual environment named `venv` to be present in the same directory. Ensure you have created and activated it before running the script. The script will check for the existence and activation of this virtual environment.
+* **Virtual Environment:** This script requires a virtual environment named `venv` to be present in the same directory. Ensure you have created and activated it before running the script. The script will check for the existence and activation of this virtual environment. This check can be skipped with the `--skip_venv_check` flag.
 * This script relies on the `brother_ql` command-line tool being installed and accessible within your activated virtual environment.
 * Ensure that your Brother label printer is properly configured and connected to your system.
 * The script will only process files that are added to the watched folder *after* the script has started running. Existing PNG files in the folder at the time of startup will not be processed.

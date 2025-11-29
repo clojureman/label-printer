@@ -137,7 +137,6 @@ def worker_thread(print_queue):
         print_queue.task_done()
 
 def main():
-    check_venv()
     parser = argparse.ArgumentParser(description="Watch a folder for new PNG files and print them using brother_ql with grouping and grace period.")
     parser.add_argument("watch_folder", help="The folder to watch for new PNG files.")
     parser.add_argument("--timeout", type=int, default=30, help="Timeout in seconds for the brother_ql print command.")
@@ -145,9 +144,13 @@ def main():
     parser.add_argument("--done_suffix", type=str, default=".done", help="Suffix to add to successfully printed files.")
     parser.add_argument("--group_separator", type=str, default="__", help="Separator in filename to define groups for no-cut (e.g., '__').")
     parser.add_argument("--grace_period", type=float, default=0.25, help="Grace period in seconds (default 0.25s) to wait for new files in the same group.")
+    parser.add_argument("--skip_venv_check", action='store_true', help="Skip virtual env check. Allows running without virtual env - typically in containers.")
     parser.add_argument("brother_ql_args", nargs=argparse.REMAINDER, help="Arguments to pass to brother_ql, separate global options from 'print' subcommand options with 'print'.")
 
     args = parser.parse_args()
+
+    if not args.skip_venv_check:
+        check_venv()
 
     watch_folder = os.path.abspath(args.watch_folder)
     timeout_seconds = args.timeout
